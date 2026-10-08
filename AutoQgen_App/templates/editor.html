@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Edit: {{ document.title }}</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f6f8; margin: 20px; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { padding: 10px; text-align: left; border: 1px solid #cbd5e1; }
+        th { background: #f1f5f9; }
+        textarea, input[type="text"] { width: 95%; padding: 6px; border: 1px solid #94a3b8; border-radius: 4px; font-family: inherit; font-size: 13px; }
+        textarea { resize: vertical; min-height: 40px; }
+        .btn { padding: 8px 16px; border-radius: 5px; font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
+        .btn-save { background: #2563eb; color: #fff; }
+        .btn-back { background: #64748b; color: #fff; margin-right: 10px; }
+        #status-msg { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <!-- CSRF Token hidden field taaki JS easily pick kar sake -->
+    <form style="display:none;">
+        {% csrf_token %}
+    </form>
+
+    <div class="container">
+        <div class="header">
+            <div>
+                <h2>Editing: {{ document.title }}</h2>
+                <small>Public ID: {{ document.cloudinary_public_id }}</small>
+            </div>
+            <div>
+                <a href="/" class="btn btn-back">← Back</a>
+                <button type="button" class="btn btn-save" onclick="saveChanges()">Save Changes to Cloudinary</button>
+            </div>
+        </div>
+
+        <div id="status-msg"></div>
+
+        <table id="records-table">
+            <thead>
+                <tr>
+                    <th style="width: 50px;">Item</th>
+                    <th style="width: 120px;">Type</th>
+                    <th>Question / Text Content</th>
+                    <th style="width: 200px;">Equations (LaTeX/OMML)</th>
+                    <th style="width: 220px;">Diagrams (URLs)</th>
+                </tr>
+            </thead>
+            <tbody id="table-body">
+                <tr><td colspan="5" style="text-align: center;">Loading data...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const docId = "{{ document.id }}";
+        let records = [];
+
+        // Cookie se ya input se CSRF token nikalna
+        function getCsrfToken() {
+            const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            if (tokenInput) return tokenInput.value;
+            return '';
+        }
+
+        async function loadData() {
+            try {
+                const response = await fetch(`/document/${docId}/?t=${Date.now()}`);
+                const data = await response.json();
+                records = data.records;
+                renderTable();
+            } catch (err) {
+                document.getElementById('status-msg').innerHTML = `<span style="color:red">Failed to load data: ${err}</span>`;
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('table-body');
+            tbody.innerHTML = '';
+
+            records.forEach((row, index) => {
+                const imgVal = row.diagram_urls || '';
+                const eqVal = row.equations || '';
+                const contentVal = row.content || '';
+
+                tbody.innerHTML += `
+                    <tr class="table-row" id="row-${index}">
+                        <td>${row.item_id || index + 1}</td>
+                        <td>${row.type || 'paragraph'}</td>
+                        <td>
+                            <textarea class="edit-content">${contentVal}</textarea>
+                        </td>
+                        <td>
+                            <textarea class="edit-equations">${eqVal}</textarea>
+                        </td>
+                        <td>
+                            <input 
+                                type="text" 
+                                class="edit-diagrams" 
+                                value="${imgVal}" 
+                                oninput="updatePreview(${index}, this.value)" 
+                                placeholder="Paste image link" 
+                            />
+                            <div id="preview-box-${index}" style="margin-top: 5px;">
+                                ${generateImageTags(imgVal)}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        function generateImageTags(urlStr) {
+            if (!urlStr || typeof urlStr !== 'string' || !urlStr.trim()) return '';
+            const urls = urlStr.split('|');
+            let tags = '';
+            urls.forEach(u => {
+                const cleanUrl = u.trim();
+                if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+                    tags += `
+                        <a href="${cleanUrl}" target="_blank" style="display:inline-block; margin-right:5px; margin-top:5px;">
+                            <img src="${cleanUrl}" onerror="this.style.display='none'" style="max-width: 120px; max-height: 80px; border-radius: 4px; border: 1px solid #cbd5e1; object-fit: contain; background: #fff;" />
+                        </a>
+                    `;
+                }
+            });
+            return tags;
+        }
+
+        function updatePreview(index, value) {
+            const previewContainer = document.getElementById(`preview-box-${index}`);
+            if (previewContainer) {
+                previewContainer.innerHTML = generateImageTags(value);
+            }
+        }
+
+        async function saveChanges() {
+            const msg = document.getElementById('status-msg');
+            msg.innerHTML = '<span style="color:blue">Saving & updating Excel on Cloudinary...</span>';
+
+            const rows = document.querySelectorAll('.table-row');
+            const payload = [];
+
+            rows.forEach((rowEl, idx) => {
+                const original = records[idx] || {};
+                const content = rowEl.querySelector('.edit-content').value;
+                const equations = rowEl.querySelector('.edit-equations').value;
+                const diagram_urls = rowEl.querySelector('.edit-diagrams').value;
+
+                payload.push({
+                    item_id: original.item_id || idx + 1,
+                    type: original.type || 'paragraph',
+                    content: content,
+                    equations: equations,
+                    diagram_urls: diagram_urls
+                });
+            });
+
+            console.log("Submitting payload:", payload);
+
+            try {
+                const csrfToken = getCsrfToken();
+                const response = await fetch(`/document/${docId}/`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({ records: payload })
+                });
+
+                const resData = await response.json();
+                console.log("Server response:", resData);
+
+                if (response.ok) {
+                    records = payload;
+                    msg.innerHTML = '<span style="color:green">✅ Saved successfully! Excel updated on Cloudinary.</span>';
+                } else {
+                    msg.innerHTML = `<span style="color:red">❌ Error: ${resData.error || JSON.stringify(resData)}</span>`;
+                }
+            } catch (err) {
+                console.error("Save failed:", err);
+                msg.innerHTML = `<span style="color:red">❌ Network Error: ${err}</span>`;
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+</html>

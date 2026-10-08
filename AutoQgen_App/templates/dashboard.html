@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AutoQgen - Uploaded Documents</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #f4f6f8; margin: 40px; color: #333; }
+        .container { max-width: 950px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #1e293b; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f8fafc; font-weight: 600; }
+        .btn { display: inline-block; padding: 6px 14px; text-decoration: none; border-radius: 4px; font-size: 14px; cursor: pointer; border: none; }
+        .btn-edit { background: #2563eb; color: #fff; margin-right: 5px; }
+        .btn-edit:hover { background: #1d4ed8; }
+        .btn-download { background: #10b981; color: #fff; margin-right: 5px; }
+        .btn-download:hover { background: #059669; }
+        .btn-delete { background: #ef4444; color: #fff; }
+        .btn-delete:hover { background: #dc2626; }
+        .btn-upload { background: #0f172a; color: #fff; margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+    <!-- CSRF Token hidden tag JS headers ke liye -->
+    <div style="display:none;">
+        {% csrf_token %}
+    </div>
+
+    <div class="container">
+        <h2>📄 Uploaded Question Banks</h2>
+        <a href="/upload/" class="btn btn-upload">+ Upload New DOCX</a>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Original File</th>
+                    <th>Records</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc in documents %}
+                <tr id="row-{{ doc.id }}">
+                    <td>{{ doc.id }}</td>
+                    <td><strong>{{ doc.title }}</strong></td>
+                    <td>{{ doc.original_filename }}</td>
+                    <td>{{ doc.total_records }} rows</td>
+                    <td>
+                        <!-- Timestamp '?v=' browser cache bypass karta hai taaki updated file download ho -->
+                        <a href="{{ doc.cloudinary_excel_url }}?v={{ doc.created_at|date:'U' }}" target="_blank" download class="btn btn-download">Excel</a>
+                        <a href="/edit/{{ doc.id }}/" class="btn btn-edit">Edit File</a>
+                        <button onclick="deleteDocument('{{ doc.id }}', '{{ doc.title }}')" class="btn btn-delete">Delete</button>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5" style="text-align: center; color: #64748b;">No files uploaded yet.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        function getCsrfToken() {
+            const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+            return tokenInput ? tokenInput.value : '';
+        }
+
+        async function deleteDocument(docId, docTitle) {
+            const confirmDelete = confirm(`Are you sure you want to delete "${docTitle}"?\nThis will remove it from both the Database and Cloudinary.`);
+            if (!confirmDelete) return;
+
+            try {
+                const response = await fetch(`/document/${docId}/`, {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRFToken': getCsrfToken(),
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const row = document.getElementById(`row-${docId}`);
+                    if (row) row.remove();
+                    alert(`"${docTitle}" has been deleted.`);
+                } else {
+                    const data = await response.json();
+                    alert(`Failed to delete: ${data.error || 'Server error'}`);
+                }
+            } catch (err) {
+                alert(`Network error: ${err}`);
+            }
+        }
+    </script>
+</body>
+</html>
