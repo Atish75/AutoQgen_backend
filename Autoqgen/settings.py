@@ -32,7 +32,7 @@ from dotenv import load_dotenv
 load_dotenv(override=True)
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition

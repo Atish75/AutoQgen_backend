@@ -165,3 +165,98 @@ def editor_view(request, pk):
     """Specific document ko edit karne ka view."""
     document = get_object_or_404(ProcessedDocument, pk=pk)
     return render(request, 'editor.html', {'document': document})
+
+# AutoQgen_App/views.py me add karein
+from django.http import HttpResponse
+from .services import generate_exam_docx
+
+def exam_paper_view(request, pk):
+    """Formal HTML exam template for printing / saving as PDF."""
+    doc = get_object_or_404(ProcessedDocument, pk=pk)
+    df = pd.read_excel(doc.cloudinary_excel_url)
+    records = df.fillna("").to_dict(orient="records")
+
+    # Split diagram URLs for template iteration
+    for r in records:
+        urls = r.get("diagram_urls", "")
+        r["images_list"] = [u.strip() for u in urls.split("|") if u.strip().startswith("http")]
+
+    return render(request, 'exam_template.html', {
+        'document': doc,
+        'records': records
+    })
+
+def export_docx_view(request, pk):
+    """Generated Question paper as .docx file download."""
+    doc = get_object_or_404(ProcessedDocument, pk=pk)
+    df = pd.read_excel(doc.cloudinary_excel_url)
+    records = df.fillna("").to_dict(orient="records")
+
+    docx_stream = generate_exam_docx(doc.title, records)
+    response = HttpResponse(
+        docx_stream.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
+    response['Content-Disposition'] = f'attachment; filename="{doc.title}_question_paper.docx"'
+    return response
+
+class ImageDirectUploadView(APIView):
+    """
+    Editor UI se direct local image Cloudinary par upload karta hai
+    aur naya secure URL return karta hai.
+    """
+    parser_classes = (MultiPartParser, FormParser)
+
+    def post(self, request):
+        image_file = request.FILES.get('image')
+        if not image_file:
+            return Response({"error": "No image file provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            upload_res = cloudinary.uploader.upload(
+                image_file,
+                folder="exam_diagrams",
+                resource_type="image"
+            )
+            return Response({
+                "image_url": upload_res.get("secure_url")
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+import re
+
+class ImageDirectDeleteView(APIView):
+    """
+    Cloudinary image URL receive karta hai aur Cloudinary storage se
+    image permanently delete karta hai.
+    """
+    def post(self, request):
+        image_url = request.data.get('image_url', '').strip()
+        if not image_url:
+            return Response({"error": "No image URL provided."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # URL se public_id extract karein:
+            # Example: https://res.cloudinary.com/.../image/upload/v12345/exam_diagrams/abc123xyz.png
+            # -> Target Public ID: "exam_diagrams/abc123xyz"
+            match = re.search(r'/upload/(?:v\d+/)?(.+?)(?:\.[a-zA-Z0-9]+)?$', image_url)
+            if not match:
+                return Response({"error": "Invalid Cloudinary URL format."}, status=status.HTTP_400_BAD_REQUEST)
+
+            public_id = match.group(1)
+
+            # Cloudinary se delete karein
+            destroy_res = cloudinary.uploader.destroy(
+                public_id,
+                resource_type="image",
+                invalidate=True
+            )
+
+            return Response({
+                "message": "Image deleted from Cloudinary successfully!",
+                "result": destroy_res.get("result")
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response({"error": f"Failed to delete image: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

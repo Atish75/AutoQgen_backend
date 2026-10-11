@@ -51,6 +51,8 @@
                         <!-- Timestamp '?v=' browser cache bypass karta hai taaki updated file download ho -->
                         <a href="{{ doc.cloudinary_excel_url }}?v={{ doc.created_at|date:'U' }}" target="_blank" download class="btn btn-download">Excel</a>
                         <a href="/edit/{{ doc.id }}/" class="btn btn-edit">Edit File</a>
+                        <a href="/paper/{{ doc.id }}/" target="_blank" class="btn" style="background:#8b5cf6; color:#fff;">Print / PDF</a>
+                        <a href="/export-docx/{{ doc.id }}/" class="btn" style="background:#f59e0b; color:#fff;">DOCX</a>
                         <button onclick="deleteDocument('{{ doc.id }}', '{{ doc.title }}')" class="btn btn-delete">Delete</button>
                     </td>
                 </tr>

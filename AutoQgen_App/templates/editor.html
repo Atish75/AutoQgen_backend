@@ -3,23 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <title>Edit: {{ document.title }}</title>
+    <!-- KaTeX CSS & JS for Live Equation Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+
     <style>
         body { font-family: system-ui, sans-serif; background: #f4f6f8; margin: 20px; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        .container { max-width: 1300px; margin: 0 auto; background: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-        th, td { padding: 10px; text-align: left; border: 1px solid #cbd5e1; }
+        th, td { padding: 10px; text-align: left; border: 1px solid #cbd5e1; vertical-align: top; }
         th { background: #f1f5f9; }
         textarea, input[type="text"] { width: 95%; padding: 6px; border: 1px solid #94a3b8; border-radius: 4px; font-family: inherit; font-size: 13px; }
-        textarea { resize: vertical; min-height: 40px; }
+        textarea { resize: vertical; min-height: 45px; }
+        
+        /* Cell Math Preview Box */
+        .cell-math-preview {
+            margin-top: 6px;
+            padding: 6px 8px;
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 4px;
+            min-height: 25px;
+            font-size: 15px;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+        }
+
+        .file-upload-box { margin-top: 8px; display: flex; align-items: center; gap: 8px; }
+        .file-upload-box input[type="file"] { display: none; }
+        .btn-upload-file { background: #e2e8f0; border: 1px solid #94a3b8; padding: 4px 10px; font-size: 12px; border-radius: 4px; cursor: pointer; }
+        .btn-upload-file:hover { background: #cbd5e1; }
+        .img-preview { max-width: 110px; max-height: 75px; border-radius: 4px; border: 1px solid #cbd5e1; object-fit: contain; background: #fff; }
+        
         .btn { padding: 8px 16px; border-radius: 5px; font-weight: 600; cursor: pointer; border: none; text-decoration: none; }
         .btn-save { background: #2563eb; color: #fff; }
         .btn-back { background: #64748b; color: #fff; margin-right: 10px; }
-        #status-msg { margin-top: 10px; font-weight: bold; }
+        .btn-math-calc { background: #8b5cf6; color: #fff; border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; cursor: pointer; margin-top: 4px; }
+        .btn-math-calc:hover { background: #7c3aed; }
+        
+        /* Math Assistant Modal */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; }
+        .math-modal { background: #fff; width: 550px; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .math-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; margin: 15px 0; }
+        .math-palette button { padding: 8px 4px; font-size: 14px; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .math-palette button:hover { background: #e2e8f0; border-color: #94a3b8; }
+        .modal-preview-box { border: 1px dashed #94a3b8; padding: 12px; min-height: 40px; margin-top: 10px; background: #fdfdfd; font-size: 18px; text-align: center; }
     </style>
 </head>
 <body>
-    <!-- CSRF Token hidden field taaki JS easily pick kar sake -->
     <form style="display:none;">
         {% csrf_token %}
     </form>
@@ -42,10 +75,10 @@
             <thead>
                 <tr>
                     <th style="width: 50px;">Item</th>
-                    <th style="width: 120px;">Type</th>
+                    <th style="width: 100px;">Type</th>
                     <th>Question / Text Content</th>
-                    <th style="width: 200px;">Equations (LaTeX/OMML)</th>
-                    <th style="width: 220px;">Diagrams (URLs)</th>
+                    <th style="width: 270px;">Equations (LaTeX/OMML)</th>
+                    <th style="width: 270px;">Diagrams / Image Upload</th>
                 </tr>
             </thead>
             <tbody id="table-body">
@@ -54,15 +87,58 @@
         </table>
     </div>
 
+    <!-- Math Calculator Modal -->
+    <div id="math-modal-overlay" class="modal-overlay">
+        <div class="math-modal">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0;">🧮 Math Equation Assistant</h3>
+                <button onclick="closeMathModal()" style="border:none; background:none; font-size:18px; cursor:pointer;">✖</button>
+            </div>
+            
+            <p style="font-size: 12px; color: #64748b; margin: 6px 0 10px 0;">Buttons par click karke formulas add karein:</p>
+            
+            <div class="math-palette">
+                <button type="button" onclick="insertSymbol('\\frac{a}{b}')">$\frac{a}{b}$</button>
+                <button type="button" onclick="insertSymbol('\\sqrt{x}')">$\sqrt{x}$</button>
+                <button type="button" onclick="insertSymbol('x^{2}')">$x^2$</button>
+                <button type="button" onclick="insertSymbol('x_{i}')">$x_i$</button>
+                <button type="button" onclick="insertSymbol('\\pm')">$\pm$</button>
+                <button type="button" onclick="insertSymbol('\\times')">$\times$</button>
+                <button type="button" onclick="insertSymbol('\\div')">$\div$</button>
+                <button type="button" onclick="insertSymbol('\\leq')">$\leq$</button>
+                <button type="button" onclick="insertSymbol('\\geq')">$\geq$</button>
+                <button type="button" onclick="insertSymbol('\\neq')">$\neq$</button>
+                <button type="button" onclick="insertSymbol('\\alpha')">$\alpha$</button>
+                <button type="button" onclick="insertSymbol('\\beta')">$\beta$</button>
+                <button type="button" onclick="insertSymbol('\\theta')">$\theta$</button>
+                <button type="button" onclick="insertSymbol('\\pi')">$\pi$</button>
+                <button type="button" onclick="insertSymbol('\\infty')">$\infty$</button>
+                <button type="button" onclick="insertSymbol('\\int_{a}^{b} f(x)dx')">$\int$</button>
+                <button type="button" onclick="insertSymbol('\\sum_{i=1}^{n} x_i')">$\sum$</button>
+                <button type="button" onclick="insertSymbol('\\lim_{x \\to 0}')">$\lim$</button>
+            </div>
+
+            <label style="font-size: 12px; font-weight: bold;">LaTeX Equation Code:</label>
+            <input type="text" id="modal-latex-input" oninput="renderModalPreview()" style="width: 95%; margin-top: 4px;" placeholder="e.g. \frac{-b \pm \sqrt{b^2 - 4ac}}{2a}">
+
+            <div style="font-size: 12px; font-weight: bold; margin-top: 12px;">Live Render Preview:</div>
+            <div id="modal-latex-preview" class="modal-preview-box">Preview yahan aayega</div>
+
+            <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="btn btn-back" onclick="closeMathModal()">Cancel</button>
+                <button type="button" class="btn btn-save" onclick="applyMathEquation()">Insert into Equation</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const docId = "{{ document.id }}";
         let records = [];
+        let activeRowIndex = null;
 
-        // Cookie se ya input se CSRF token nikalna
         function getCsrfToken() {
             const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
-            if (tokenInput) return tokenInput.value;
-            return '';
+            return tokenInput ? tokenInput.value : '';
         }
 
         async function loadData() {
@@ -93,36 +169,138 @@
                             <textarea class="edit-content">${contentVal}</textarea>
                         </td>
                         <td>
-                            <textarea class="edit-equations">${eqVal}</textarea>
+                            <textarea id="equations-input-${index}" class="edit-equations" oninput="renderCellMathPreview(${index}, this.value)">${eqVal}</textarea>
+                            
+                            <!-- Box ke theek niche live rendered visual math preview -->
+                            <div id="cell-math-preview-${index}" class="cell-math-preview"></div>
+
+                            <button type="button" class="btn-math-calc" onclick="openMathModal(${index})">
+                                🧮 ∑ Math Keyboard
+                            </button>
                         </td>
                         <td>
                             <input 
                                 type="text" 
+                                id="diagram-input-${index}"
                                 class="edit-diagrams" 
                                 value="${imgVal}" 
                                 oninput="updatePreview(${index}, this.value)" 
-                                placeholder="Paste image link" 
+                                placeholder="Image URL" 
                             />
-                            <div id="preview-box-${index}" style="margin-top: 5px;">
-                                ${generateImageTags(imgVal)}
+                            
+                            <div class="file-upload-box">
+                                <label class="btn-upload-file" for="file-picker-${index}">📁 Choose New Image</label>
+                                <input 
+                                    type="file" 
+                                    id="file-picker-${index}" 
+                                    accept="image/*" 
+                                    onchange="uploadLocalImage(${index}, this)" 
+                                />
+                                <span id="upload-status-${index}" style="font-size: 11px; color: #64748b;"></span>
+                            </div>
+
+                            <div id="preview-box-${index}">
+                                ${generateImageTags(imgVal, index)}
                             </div>
                         </td>
                     </tr>
                 `;
+                
+                // Row load hote hi math preview render karein
+                setTimeout(() => renderCellMathPreview(index, eqVal), 50);
             });
         }
 
-        function generateImageTags(urlStr) {
+        // Cell ke andar live math render karne ka helper
+        function renderCellMathPreview(index, rawText) {
+            const targetEl = document.getElementById(`cell-math-preview-${index}`);
+            if (!targetEl) return;
+
+            let clean = rawText ? rawText.trim() : '';
+            if (!clean) {
+                targetEl.innerHTML = '<span style="color:#94a3b8; font-size:12px; font-style:italic;">No equation preview</span>';
+                return;
+            }
+
+            // $ signs strip karein taaki KaTeX direct parse kare
+            clean = clean.replace(/^\$+|\$+$/g, '').trim();
+
+            try {
+                if (window.katex) {
+                    katex.render(clean, targetEl, { throwOnError: false });
+                } else {
+                    targetEl.innerText = clean;
+                }
+            } catch (e) {
+                targetEl.innerText = clean;
+            }
+        }
+
+        function openMathModal(rowIndex) {
+            activeRowIndex = rowIndex;
+            const currentVal = document.getElementById(`equations-input-${rowIndex}`).value;
+            const cleanVal = currentVal.replace(/^\$+|\$+$/g, '').trim();
+            document.getElementById('modal-latex-input').value = cleanVal;
+            document.getElementById('math-modal-overlay').style.display = 'flex';
+            renderModalPreview();
+        }
+
+        function closeMathModal() {
+            document.getElementById('math-modal-overlay').style.display = 'none';
+            activeRowIndex = null;
+        }
+
+        function insertSymbol(latexCode) {
+            const input = document.getElementById('modal-latex-input');
+            input.value += (input.value ? ' ' : '') + latexCode;
+            renderModalPreview();
+        }
+
+        function renderModalPreview() {
+            const val = document.getElementById('modal-latex-input').value.trim();
+            const previewEl = document.getElementById('modal-latex-preview');
+            if (!val) {
+                previewEl.innerText = "Preview yahan aayega";
+                return;
+            }
+            try {
+                katex.render(val, previewEl, { throwOnError: false });
+            } catch (e) {
+                previewEl.innerText = val;
+            }
+        }
+
+        function applyMathEquation() {
+            if (activeRowIndex !== null) {
+                const val = document.getElementById('modal-latex-input').value.trim();
+                const targetTextarea = document.getElementById(`equations-input-${activeRowIndex}`);
+                const finalEq = val ? `$${val}$` : '';
+                targetTextarea.value = finalEq;
+                renderCellMathPreview(activeRowIndex, finalEq);
+            }
+            closeMathModal();
+        }
+
+        function generateImageTags(urlStr, rowIndex) {
             if (!urlStr || typeof urlStr !== 'string' || !urlStr.trim()) return '';
             const urls = urlStr.split('|');
             let tags = '';
-            urls.forEach(u => {
+
+            urls.forEach((u, imgIdx) => {
                 const cleanUrl = u.trim();
                 if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
                     tags += `
-                        <a href="${cleanUrl}" target="_blank" style="display:inline-block; margin-right:5px; margin-top:5px;">
-                            <img src="${cleanUrl}" onerror="this.style.display='none'" style="max-width: 120px; max-height: 80px; border-radius: 4px; border: 1px solid #cbd5e1; object-fit: contain; background: #fff;" />
-                        </a>
+                        <div id="img-item-${rowIndex}-${imgIdx}" style="display:inline-block; margin: 6px 6px 0 0; text-align: center; vertical-align: top; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px;">
+                            <a href="${cleanUrl}" target="_blank">
+                                <img src="${cleanUrl}" class="img-preview" onerror="this.style.display='none'" />
+                            </a>
+                            <button 
+                                type="button" 
+                                onclick="deleteImageFromCloudinary(${rowIndex}, '${cleanUrl}', ${imgIdx})" 
+                                style="margin-top: 4px; padding: 2px 6px; background: #ef4444; color: #fff; font-size: 11px; border: none; border-radius: 3px; cursor: pointer;">
+                                🗑️ Delete
+                            </button>
+                        </div>
                     `;
                 }
             });
@@ -132,7 +310,70 @@
         function updatePreview(index, value) {
             const previewContainer = document.getElementById(`preview-box-${index}`);
             if (previewContainer) {
-                previewContainer.innerHTML = generateImageTags(value);
+                previewContainer.innerHTML = generateImageTags(value, index);
+            }
+        }
+
+        async function uploadLocalImage(index, fileInput) {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const statusSpan = document.getElementById(`upload-status-${index}`);
+            statusSpan.innerText = "Uploading...";
+            statusSpan.style.color = "#2563eb";
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                const response = await fetch('/upload-image/', {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': getCsrfToken() },
+                    body: formData
+                });
+
+                const resData = await response.json();
+                if (response.ok && resData.image_url) {
+                    const newUrl = resData.image_url;
+                    const inputEl = document.getElementById(`diagram-input-${index}`);
+                    inputEl.value = inputEl.value.trim() ? `${inputEl.value.trim()} | ${newUrl}` : newUrl;
+                    updatePreview(index, inputEl.value);
+                    statusSpan.innerText = "✅ Uploaded!";
+                    statusSpan.style.color = "#16a34a";
+                } else {
+                    statusSpan.innerText = "❌ Failed";
+                    statusSpan.style.color = "#dc2626";
+                }
+            } catch (err) {
+                statusSpan.innerText = "❌ Network error";
+            }
+        }
+
+        async function deleteImageFromCloudinary(rowIndex, targetUrl, imgIdx) {
+            if (!confirm("Are you sure you want to permanently delete this image from Cloudinary?")) return;
+
+            try {
+                const response = await fetch('/delete-image/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ image_url: targetUrl })
+                });
+
+                if (response.ok) {
+                    const inputEl = document.getElementById(`diagram-input-${rowIndex}`);
+                    let currentUrls = inputEl.value.split('|').map(u => u.trim());
+                    currentUrls = currentUrls.filter(u => u !== targetUrl && u !== '');
+                    const updatedVal = currentUrls.join(' | ');
+                    inputEl.value = updatedVal;
+                    updatePreview(rowIndex, updatedVal);
+                } else {
+                    alert("Delete failed on Cloudinary.");
+                }
+            } catch (err) {
+                alert("Network error.");
             }
         }
 
@@ -158,30 +399,24 @@
                 });
             });
 
-            console.log("Submitting payload:", payload);
-
             try {
-                const csrfToken = getCsrfToken();
                 const response = await fetch(`/document/${docId}/`, {
                     method: 'PUT',
                     headers: { 
                         'Content-Type': 'application/json',
-                        'X-CSRFToken': csrfToken
+                        'X-CSRFToken': getCsrfToken()
                     },
                     body: JSON.stringify({ records: payload })
                 });
 
                 const resData = await response.json();
-                console.log("Server response:", resData);
-
                 if (response.ok) {
                     records = payload;
                     msg.innerHTML = '<span style="color:green">✅ Saved successfully! Excel updated on Cloudinary.</span>';
                 } else {
-                    msg.innerHTML = `<span style="color:red">❌ Error: ${resData.error || JSON.stringify(resData)}</span>`;
+                    msg.innerHTML = `<span style="color:red">❌ Error: ${resData.error || 'Update failed'}</span>`;
                 }
             } catch (err) {
-                console.error("Save failed:", err);
                 msg.innerHTML = `<span style="color:red">❌ Network Error: ${err}</span>`;
             }
         }
